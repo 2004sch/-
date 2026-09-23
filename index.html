@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh‑CN">
+<head>
+    <meta charset="UTF‑8">
+    <meta name="viewport" content="width=device‑width, initial‑scale=1.0">
+    <title>幕后台助｜P2P跨网同步版</title>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        * {margin:0;padding:0;box‑sizing:border‑box;font‑family:"Microsoft Yahei",sans‑serif;}
+        body {background‑color:#121722;color:#fff;padding:20px;}
+        .connect‑panel{background:#1f2a42;padding:14px;border‑radius:10px;margin‑bottom:16px;border:1px solid #38486b;}
+        .status‑tip{margin:8px 0;font‑weight:bold;}
+        .share‑url{background:#273452;padding:8px;border‑radius:6px;margin‑top:8px;word‑break:break‑all;}
+        .role‑select‑mask{position:fixed;top:0;left:0;width:100%;height:100%;background:#121722;z‑index:9999;display:flex;align‑items:center;justify‑content:center;}
+        .role‑select‑box{text‑align:center;}
+        .role‑select‑box h2{margin‑bottom:32px;font‑size:30px;}
+        .role‑select‑box button{width:220px;height:85px;font‑size:24px;margin:10px;border‑radius:10px;border:none;cursor:pointer;}
+        .btn‑sel‑master{background:#2b70d8;color:#fff;}
+        .btn‑sel‑watch{background:#23a958;color:#fff;}
+        .header{display:flex;justify‑content:space‑between;align‑items:center;margin‑bottom:20px;gap:20px;flex‑wrap:wrap;}
+        .header‑buttons{display:flex;gap:8px;}
+        .role‑tag{background:#2b70d8;padding:4px 10px;border‑radius:8px;font‑weight:bold;}
+        .p2p‑note{background:#333;padding:4px 10px;border‑radius:8px;}
+        .container{display:grid;grid‑template‑columns:1fr 1fr;gap:20px;}
+        .card{background:#202b42;border‑radius:14px;padding:20px;border:1px solid #354668;}
+        .card‑title{font‑size:22px;margin‑bottom:16px;color:#7cb8ff;}
+        .item‑row{margin:12px 0;}
+        label{display:block;color:#b9c8e3;margin:6px 0 4px;}
+        input,select,textarea,button{padding:8px;border‑radius:6px;border:none;background:#161e30;color:#fff;font‑size:16px;}
+        .channel‑tag{display:inline‑flex;align‑items:center;background:#c42828;padding:4px 8px;border‑radius:4px;margin:3px;gap:6px;}
+        .channel‑tag .close{cursor:pointer;font‑weight:bold;}
+        .time‑display{font‑size:48px;text‑align:center;margin:20px 0;color:#ffdd44;}
+        .time‑display.alert{color:#ff4444;}
+        .btn‑group{margin‑top:20px;display:flex;gap:10px;flex‑wrap:wrap;}
+        button{width:auto;padding:10px 16px;cursor:pointer;}
+        .btn‑primary{background:#2b70d8;}
+        .btn‑success{background:#23a958;}
+        .btn‑warning{background:#dd8b22;}
+        .btn‑danger{background:#c42828;}
+        button:disabled{background:#555 !important;cursor:not‑allowed;opacity:0.6;}
+        .modal‑mask{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:none;justify‑content:center;align‑items:center;z‑index:999;}
+        .modal‑box{width:95%;max‑width:980px;background:#1b2436;border‑radius:12px;padding:24px;max‑height:90vh;overflow‑y:auto;}
+        .modal‑box h3{margin‑bottom:12px;}
+        .program‑drag‑item{background:#2c3b58;border‑radius:8px;padding:14px;margin:10px 0;border:1px solid #445880;cursor:grab;}
+        .program‑drag‑item:active{cursor:grabbing;}
+        .program‑row‑top{display:grid;grid‑template‑columns:60px 1fr 65px 65px 65px 1fr;gap:8px;margin‑bottom:10px;align‑items:center;}
+        .channel‑wrap{margin:8px 0;}
+        .channel‑tag‑row{display:flex;flex‑wrap:wrap;gap:6px;margin‑bottom:8px;}
+        .channel‑input‑row{display:flex;gap:8px;}
+        .program‑drag‑item textarea{width:100%;margin:8px 0;}
+        .program‑drag‑item .del‑btn{width:auto;background:#912222;margin‑top:4px;}
+        .import‑area{margin:12px 0;padding:10px;border:1px dashed #557;border‑radius:8px;}
+        .watch‑only‑area{display:none;}
+        .master‑only‑area{display:none;}
+        body.is‑watch .watch‑only‑area{display:block;}
+        body.is‑master .master‑only‑area{display:block;}
+        body.is‑watch .time‑display{font‑size:72px;}
+        body.is‑watch .card{max‑width:760px;margin:0 auto 24px;}
+        .watch‑item‑text{font‑size:20px;margin:8px 0;}
+        .watch‑label{color:#99b8ee;}
+    </style>
+</head>
+<body>
+    <div class="role‑select‑mask" id="roleSelectMask">
+        <div class="role‑select‑box">
+            <h2>请选择工作模式（P2P跨网同步）</h2>
+            <button class="btn‑sel‑master" onclick="setMasterMode()">主控端（发布同步）</button>
+            <br/>
+            <button class="btn‑sel‑watch" onclick="setWatchMode()">观看端（接收同步）</button>
+        </div>
+    </div>
+
+    <div class="header">
+        <h1>幕后台助系统【P2P跨网同步】</h1>
+        <div style="display:flex;gap:12px;align‑items:center;flex‑wrap:wrap;">
+            <div class="header‑buttons">
+                <button class="btn‑primary" onclick="setMasterMode()">切换主控端</button>
+                <button class="btn‑success" onclick="setWatchMode()">切换观看端</button>
+            </div>
+            <div class="role‑tag" id="roleTag">--</div>
+            <div class="p2p‑note" id="p2pStatus">未连接P2P</div>
+        </div>
+    </div>
+
+    <div class="connect‑panel" id="p2pPanel">
+        <div>房间ID：<input type="text" id="roomIdInput" placeholder="输入相同房间号，例如 show001" value="show001">
+        <button onclick="initP2P()">启动P2P连接</button>
+        <button onclick="stopP2P()">断开P2P</button>
+        </div>
+        <div class="status‑tip">提示：主控启动；其他设备输入同一个房间ID，加入接收同步。</div>
+        <div class="share‑url" id="shareUrlBox" style="display:none;">
+            分享给观众的观看链接（直接复制发给手机）：
+            <div id="shareUrlText"></div>
+        </div>
+    </div>
+
+    <div class="master‑only‑area">
+        <div style="display:flex;gap:20px;justify‑content:center;align‑items:center;flex‑wrap:wrap">
+            <label><input type="checkbox" id="countdownMode" onchange="onCountdownModeChange()"> 倒计时模式</label>
+            <div class="time‑display" id="timer">00:00:00</div>
+            <div>本节目预计时长：<span id="planTimeText">00:03:00</span></div>
+        </div>
+        <div class="container">
+            <div class="card">
+                <div class="card‑title">正在进行</div>
+                <div class="item‑row">
+                    <label>序号 & 节目名称</label>
+                    <input id="currentName" value="" readonly>
+                </div>
+                <div class="item‑row">
+                    <label>通道</label>
+                    <div id="currentChannelBox"></div>
+                </div>
+                <div class="item‑row">
+                    <label>音乐</label>
+                    <input id="currentMusic" value="" readonly>
+                </div>
+                <div class="item‑row">
+                    <label>备注</label>
+                    <textarea id="currentRemark" rows="2" readonly></textarea>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card‑title">下一个节目</div>
+                <div class="item‑row">
+                    <label>序号 & 节目名称</label>
+                    <input id="nextName" value="" readonly>
+                </div>
+                <div class="item‑row">
+                    <label>通道</label>
+                    <div id="nextChannelBox"></div>
+                </div>
+                <div class="item‑row">
+                    <label>音乐</label>
+                    <input id="nextMusic" value="" readonly>
+                </div>
+                <div class="item‑row">
+                    <label>备注</label>
+                    <textarea id="nextRemark" rows="2" readonly></textarea>
+                </div>
+            </div>
+        </div>
+        <div class="btn‑group">
+            <button class="btn‑success" onclick="startTimer()">开始计时</button>
+            <button class="btn‑warning" onclick="pauseTimer()">暂停计时</button>
+            <button class="btn‑danger" onclick="resetTimer()">重置计时</button>
+            <button class="btn‑primary" onclick="prevItem()">上一个节目</button>
+            <button class="btn‑primary" onclick="nextItem()">下一个节目</button>
+            <button onclick="playRemindSound()">测试提示音</button>
+            <button class="btn‑warning" onclick="openEditModal()">节目编辑</button>
+        </div>
+        <div class="modal‑mask" id="editModal">
+            <div class="modal‑box">
+                <h3>节目清单（拖拽模块调整顺序，拖拽/新增/删除后序号自动重排）</h3>
+                <div class="import‑area">
+                    <p>导入Excel导出CSV文件</p>
+                    <input type="file" id="csvFileInput" accept=".csv" onchange="importCsvFile(event)">
+                </div>
+                <div id="programDragWrap"></div>
+                <div class="btn‑group" style="margin‑top:16px;">
+                    <button class="btn‑primary" onclick="addNewProgram()">新增节目</button>
+                    <button onclick="exportFlowCsv()">导出CSV(Excel)</button>
+                    <button class="btn‑danger" onclick="closeEditModal()">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="watch‑only‑area">
+        <div class="time‑display" id="timerWatch">00:00:00</div>
+        <div class="card">
+            <div class="card‑title">当前节目</div>
+            <div class="watch‑item‑text"><span class="watch‑label">节目：</span><span id="watchCurrentName">--</span></div>
+            <div class="watch‑item‑text"><span class="watch‑label">通道：</span><span id="watchCurrentChannel">--</span></div>
+            <div class="watch‑item‑text"><span class="watch‑label">音乐：</span><span id="watchCurrentMusic">--</span></div>
+            <div class="watch‑item‑text"><span class="watch‑label">备注：</span><span id="watchCurrentRemark">--</span></div>
+        </div>
+        <div class="card">
+            <div class="card‑title">下一个节目</div>
+            <div class="watch‑item‑text"><span class="watch‑label">节目：</span><span id="watchNextName">--</span></div>
+            <div class="watch‑item‑text"><span class="watch‑label">通道：</span><span id="watchNextChannel">--</span></div>
+            <div class="watch‑item‑text"><span class="watch‑label">音乐：</span><span id="watchNextMusic">--</span></div>
+            <div class="watch‑item‑text"><span class="watch‑label">备注：</span><span id="watchNextRemark">--</span></div>
+        </div>
+    </div>
+
+<script>
+const roleTagEl = document.getElementById("roleTag");
+const roleSelectMask = document.getElementById("roleSelectMask");
+const p2pStatusEl = document.getElementById("p2pStatus");
+const fileInput = document.getElementById("csvFileInput");
+const shareUrlBox = document.getElementById("shareUrlBox");
+const shareUrlText = document.getElementById("shareUrlText");
+
+let IS_MASTER = null;
+let timerInterval;
+let seconds = 0;
+let planDuration = 180;
+let remindTriggered = false;
+let flowQueue = [];
+let currentIndex = 0;
+let dragSourceIndex = null;
+
+let peer = null;
+let connections = [];
+let isP2PReady = false;
+
+//工具函数
+function hms2sec(h,m,s){return Number(h||0)*3600 + Number(m||0)*60 + Number(s||0);}
+function sec2hms(totalSec){
+    let h=Math.floor(totalSec/3600),rem=totalSec%3600,m=Math.floor(rem/60),s=rem%60;
+    return {h:String(h),m:String(m),s:String(s)};
+}
+function fmtTime(s){
+    let h=Math.floor(s/3600).toString().padStart(2,'0');
+    let m=Math.floor((s%3600)/60).toString().padStart(2,'0');
+    let sec=(s%60).toString().padStart(2,'0');
+    return `${h}:${m}:${sec}`;
+}
+
+//本地存储
+function saveLocal(){
+    localStorage.setItem("stageFlow", JSON.stringify(flowQueue));
+    localStorage.setItem("stageMeta",JSON.stringify({
+        currentIndex,seconds,planDuration,remindTriggered,
+        countdownMode: document.getElementById("countdownMode").checked
+    }));
+}
+function loadLocal(){
+    try{
+        const f=localStorage.getItem("stageFlow");
+        const m=localStorage.getItem("stageMeta");
+        if(f){
+            flowQueue=JSON.parse(f);
+            flowQueue.forEach(p=>{if(!Array.isArray(p.channels)) p.channels=[];});
+        }
+        if(m && IS_MASTER){
+            const meta=JSON.parse(m);
+            currentIndex=meta.currentIndex??0;
+            seconds=meta.seconds??0;
+            planDuration=meta.planDuration??180;
+            remindTriggered=meta.remindTriggered??false;
+            document.getElementById("countdownMode").checked=!!meta.countdownMode;
+        }
+    }catch(e){flowQueue=[];}
+}
+
+function reAutoNumber(){
+    flowQueue.forEach((item,idx)=>{item.id=String(idx+1);});
+}
+
+function onCountdownModeChange(){
+    if(!IS_MASTER) return;
+    pauseTimer();
+    const isCountdown=document.getElementById("countdownMode").checked;
+    seconds=isCountdown?planDuration:0;
+    remindTriggered=false;
+    const timeStr=fmtTime(Math.abs(seconds));
+    document.getElementById("timer").innerText=timeStr;
+    document.getElementById("timer").classList.toggle("alert",isCountdown&&seconds<=0);
+    saveLocal();
+    broadcastState();
+}
+
+function setMasterMode(){
+    IS_MASTER=true;
+    document.body.classList.remove("is‑watch");
+    document.body.classList.add("is‑master");
+    roleTagEl.innerText="主控端";
+    roleSelectMask.style.display="none";
+    loadLocal();
+    renderDragProgramList();
+    renderItem(currentIndex);
+}
+function setWatchMode(){
+    IS_MASTER=false;
+    document.body.classList.remove("is‑master");
+    document.body.classList.add("is‑watch");
+    roleTagEl.innerText="观看端";
+    roleSelectMask.style.display="none";
+}
+
+//提示音
+const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+function playRemindSound(){
+    const osc=audioCtx.createOscillator();
+    const gain=audioCtx.createGain();
+    osc.connect(gain);gain.connect(audioCtx.destination);
+    osc.type="sine";osc.frequency.value=880;gain.gain.value=0.25;
+    osc.start();setTimeout(()=>osc.stop(),350);
+}
+
+function renderItem(idx){
+    if(flowQueue.length===0) return;
+    const curr=flowQueue[idx];
+    const next=flowQueue[idx+1]||{id:"",name:"无",channels:[],music:"",remark:"",h:"0",m:"0",s:"0"};
+    const currText=curr.id+" "+curr.name;
+    const nextText=next.id+" "+next.name;
+    planDuration=hms2sec(curr.h,curr.m,curr.s);
+    if(IS_MASTER){
+        document.getElementById("planTimeText").innerText=fmtTime(planDuration);
+        document.getElementById("currentName").value=currText;
+        document.getElementById("currentMusic").value=curr.music;
+        document.getElementById("currentRemark").value=curr.remark;
+        document.getElementById("currentChannelBox").innerHTML=curr.channels.map(ch=>`<span class="channel‑tag">${ch}</span>`).join("");
+        document.getElementById("nextName").value=nextText;
+        document.getElementById("nextMusic").value=next.music;
+        document.getElementById("nextRemark").value=next.remark;
+        document.getElementById("nextChannelBox").innerHTML=next.channels.map(ch=>`<span class="channel‑tag">${ch}</span>`).join("");
+    }else{
+        document.getElementById("watchCurrentName").innerText=currText;
+        document.getElementById("watchCurrentChannel").innerText=curr.channels.join("、")||"无";
+        document.getElementById("watchCurrentMusic").innerText=curr.music;
+        document.getElementById("watchCurrentRemark").innerText=curr.remark;
+        document.getElementById("watchNextName").innerText=nextText;
+        document.getElementById("watchNextChannel").innerText=next.channels.join("、")||"无";
+        document.getElementById("watchNextMusic").innerText=next.music||"无";
+        document.getElementById("watchNextRemark").innerText=next.remark||"无";
+    }
+    const isCountdown=IS_MASTER?document.getElementById("countdownMode").checked:false;
+    seconds=isCountdown?planDuration:0;
+    remindTriggered=false;
+    const timeStr=fmtTime(Math.abs(seconds));
+    if(IS_MASTER){
+        document.getElementById("timer").innerText=timeStr;
+        document.getElementById("timer").classList.toggle("alert",isCountdown&&seconds<=0);
+    }else{
+        document.getElementById("timerWatch").innerText=timeStr;
+    }
+    saveLocal();
+    if(IS_MASTER) broadcastState();
+}
+
+function renderDragProgramList(){
+    const wrap=document.getElementById("programDragWrap");
+    wrap.innerHTML="";
+    flowQueue.forEach((item,idx)=>{
+        const chList=Array.isArray(item.channels)?item.channels:[];
+        const div=document.createElement("div");
+        div.className="program‑drag‑item";
+        div.draggable=true;
+        div.dataset.idx=idx;
+        let tagHtml=`<div class="channel‑tag‑row">`;
+        chList.forEach((ch,chi)=>{
+            tagHtml+=`<span class="channel‑tag">${ch}<span class="close" onclick="delChannel(${idx},${chi})">×</span></span>`;
+        });
+        tagHtml+=`</div>
+        <div class="channel‑input‑row">
+            <input placeholder="输入通道名称" id="chInput${idx}" style="flex:1">
+            <button onclick="addChannel(${idx})">添加通道</button>
+        </div>`;
+        div.innerHTML=`
+            <div class="program‑row‑top">
+                <input placeholder="序号" value="${item.id??""}" onchange="modifyProgramItem(${idx},'id',this.value)">
+                <input placeholder="节目名称" value="${item.name??""}" onchange="modifyProgramItem(${idx},'name',this.value)">
+                <input type="number" min="0" placeholder="时" value="${item.h??"0"}" onchange="modifyProgramItem(${idx},'h',this.value)">
+                <input type="number" min="0" placeholder="分" value="${item.m??"3"}" onchange="modifyProgramItem(${idx},'m',this.value)">
+                <input type="number" min="0" placeholder="秒" value="${item.s??"0"}" onchange="modifyProgramItem(${idx},'s',this.value)">
+                <input placeholder="背景音乐" value="${item.music??""}" onchange="modifyProgramItem(${idx},'music',this.value)">
+            </div>
+            <div class="channel‑wrap">${tagHtml}</div>
+            <textarea placeholder="备注" onchange="modifyProgramItem(${idx},'remark',this.value)">${item.remark??""}</textarea>
+            <button class="del‑btn" onclick="deleteProgramItem(${idx})">删除本条</button>
+        `;
+        div.ondragstart=()=>{dragSourceIndex=idx;};
+        div.ondragover=(e)=>e.preventDefault();
+        div.ondrop=(e)=>{
+            e.preventDefault();
+            const targetIdx=Number(div.dataset.idx);
+            if(dragSourceIndex===null||dragSourceIndex===targetIdx){dragSourceIndex=null;return;}
+            const temp=flowQueue[dragSourceIndex];
+            flowQueue.splice(dragSourceIndex,1);
+            flowQueue.splice(targetIdx,0,temp);
+            if(currentIndex===dragSourceIndex) currentIndex=targetIdx;
+            else if(dragSourceIndex<currentIndex&&targetIdx>=currentIndex) currentIndex‑‑;
+            else if(dragSourceIndex>currentIndex&&targetIdx<=currentIndex) currentIndex++;
+            dragSourceIndex=null;
+            reAutoNumber();
+            renderDragProgramList();
+            renderItem(currentIndex);
+        };
+        wrap.appendChild(div);
+    })
+}
+
+function addChannel(idx){
+    const inp=document.getElementById("chInput"+idx);
+    const val=inp.value.trim();
+    if(!val) return;
+    if(!Array.isArray(flowQueue[idx].channels)) flowQueue[idx].channels=[];
+    flowQueue[idx].channels.push(val);
+    inp.value="";
+    renderDragProgramList();renderItem(currentIndex);
+}
+function delChannel(idx,chi){
+    if(!Array.isArray(flowQueue[idx].channels)) flowQueue[idx].channels=[];
+    flowQueue[idx].channels.splice(chi,1);
+    renderDragProgramList();renderItem(currentIndex);
+}
+function modifyProgramItem(idx,key,val){
+    flowQueue[idx][key]=val;
+    renderItem(currentIndex);renderDragProgramList();
+}
+function addNewProgram(){
+    flowQueue.push({id:"",name:"新节目",h:"0",m:"3",s:"0",channels:[],music:"",remark:""});
+    reAutoNumber();renderDragProgramList();renderItem(currentIndex);
+}
+function deleteProgramItem(idx){
+    flowQueue.splice(idx,1);
+    if(currentIndex>=flowQueue.length) currentIndex=flowQueue.length‑1;
+    reAutoNumber();renderDragProgramList();renderItem(currentIndex);
+}
+
+fileInput.onchange=function(e){
+    const file=e.target.files[0];
+    if(!file) return;
+    Papa.parse(file,{
+        header:false,skipEmptyLines:true,
+        complete:function(results){
+            flowQueue=[];
+            results.data.forEach(row=>{
+                const totalSec=Number(row[2]||180);
+                const t=sec2hms(totalSec);
+                let chStr=row[3]||"";
+                let chArr=chStr.split(";").filter(x=>x.trim()!=="").map(x=>x.trim());
+                flowQueue.push({id:"",name:row[1]??"",h:t.h,m:t.m,s:t.s,channels:chArr,music:row[4]??"",remark:row[5]??""});
+            });
+            reAutoNumber();currentIndex=0;
+            renderDragProgramList();renderItem(currentIndex);
+            alert("导入成功");e.target.value="";
+        }
+    })
+}
+
+function exportFlowCsv(){
+    const header=["序号","节目名称","预计时长(秒)","通道","音乐","备注"];
+    const rows=flowQueue.map(p=>{
+        const total=hms2sec(p.h,p.m,p.s);
+        const chStr=Array.isArray(p.channels)?p.channels.join(";"):"";
+        return [p.id??"",p.name??"",total,chStr,p.music??"",p.remark??""];
+    });
+    const csvContent=[header,...rows].map(r=>r.map(x=>`"${String(x).replaceAll('"','""')}"`).join(",")).join("\n");
+    const blob=new Blob([csvContent],{type:"text/csv;charset=utf‑8"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download="晚会节目清单.csv";a.click();
+}
+
+function prevItem(){playRemindSound();pauseTimer();if(currentIndex>0){currentIndex‑‑;renderItem(currentIndex);}else alert("已经是第一个节目！");}
+function nextItem(){playRemindSound();pauseTimer();if(currentIndex<flowQueue.length‑1){currentIndex++;renderItem(currentIndex);}else alert("已经是最后一个节目！");}
+function openEditModal(){renderDragProgramList();document.getElementById("editModal").style.display="flex";}
+function closeEditModal(){document.getElementById("editModal").style.display="none";}
+
+function startTimer(){
+    if(timerInterval) return;
+    const curr=flowQueue[currentIndex];
+    planDuration=hms2sec(curr.h,curr.m,curr.s);
+    timerInterval=setInterval(()=>{
+        const isCountdown=document.getElementById("countdownMode").checked;
+        if(isCountdown){seconds‑‑;if(seconds<=0){seconds=0;playRemindSound();}}
+        else{seconds++;}
+        const timeStr=fmtTime(Math.abs(seconds));
+        document.getElementById("timer").innerText=timeStr;
+        document.getElementById("timer").classList.toggle("alert",isCountdown&&seconds<=0);
+        saveLocal();broadcastState();
+        const remindVal=30;
+        if(isCountdown&&seconds===remindVal&&!remindTriggered){playRemindSound();remindTriggered=true;}
+        if(!isCountdown&&seconds===(planDuration‑remindVal)&&!remindTriggered){playRemindSound();remindTriggered=true;}
+    },1000);
+}
+function pauseTimer(){clearInterval(timerInterval);timerInterval=null;saveLocal();broadcastState();}
+function resetTimer(){
+    pauseTimer();
+    const curr=flowQueue[currentIndex];
+    planDuration=hms2sec(curr.h,curr.m,curr.s);
+    const isCountdown=document.getElementById("countdownMode").checked;
+    seconds=isCountdown?planDuration:0;
+    remindTriggered=false;
+    const timeStr=fmtTime(Math.abs(seconds));
+    document.getElementById("timer").innerText=timeStr;
+    document.getElementById("timer").classList.toggle("alert",isCountdown&&seconds<=0);
+    saveLocal();broadcastState();
+}
+
+// ========= P2P点对点逻辑 =========
+function getSyncState(){
+    return {
+        flowQueue:JSON.parse(JSON.stringify(flowQueue)),
+        currentIndex,seconds,planDuration,remindTriggered,
+        countdownMode:document.getElementById("countdownMode").checked
+    };
+}
+function applySyncState(state){
+    flowQueue=state.flowQueue;
+    flowQueue.forEach(p=>{if(!Array.isArray(p.channels)) p.channels=[];});
+    currentIndex=state.currentIndex;
+    seconds=state.seconds;
+    planDuration=state.planDuration;
+    remindTriggered=state.remindTriggered;
+    if(IS_MASTER===false){
+        document.getElementById("countdownMode").checked=!!state.countdownMode;
+    }
+    renderItem(currentIndex);
+    if(IS_MASTER) renderDragProgramList();
+}
+function broadcastState(){
+    if(!isP2PReady||!IS_MASTER) return;
+    const payload={type:"sync",data:getSyncState()};
+    connections.forEach(conn=>{if(conn.open) conn.send(payload);});
+}
+
+function initP2P(){
+    const roomId=document.getElementById("roomIdInput").value.trim();
+    if(!roomId){alert("请填写房间ID");return;}
+    stopP2P();
+    p2pStatusEl.innerText="正在连接P2P信令…";
+    peer=new Peer(roomId);
+    peer.on("open",(id)=>{
+        isP2PReady=true;
+        p2pStatusEl.innerText="P2P就绪，房间:"+roomId;
+        if(IS_MASTER){
+            //主控生成分享链接
+            const baseUrl=window.location.origin+window.location.pathname;
+            const shareLink=`${baseUrl}?mode=watch&room=${roomId}`;
+            shareUrlBox.style.display="block";
+            shareUrlText.innerText=shareLink;
+        }else{
+            shareUrlBox.style.display="none";
+        }
+    });
+    peer.on("connection",(conn)=>{
+        connections.push(conn);
+        setupConn(conn);
+        if(IS_MASTER){
+            setTimeout(()=>conn.send({type:"sync",data:getSyncState()}),200);
+        }
+    });
+    peer.on("error",(err)=>{
+        console.error("PeerJS错误",err);
+        p2pStatusEl.innerText="P2P连接失败，降级单机";
+        isP2PReady=false;
+    });
+}
+function stopP2P(){
+    if(peer){peer.destroy();peer=null;}
+    connections.forEach(c=>{try{c.close();}catch(e){}});
+    connections=[];
+    isP2PReady=false;
+    p2pStatusEl.innerText="P2P已断开，本机单机模式";
+    shareUrlBox.style.display="none";
+}
+function setupConn(conn){
+    conn.on("data",(msg)=>{
+        if(msg.type==="sync"){
+            applySyncState(msg.data);
+        }
+    });
+    conn.on("close",()=>{
+        connections=connections.filter(c=>c!==conn);
+    });
+}
+
+//解析URL参数，自动模式、自动房间
+function parseUrlParamsAndAutoRun(){
+    const params=new URLSearchParams(window.location.search);
+    const mode=params.get("mode");
+    const room=params.get("room");
+    if(!mode||!room){
+        //没有参数，弹窗手动选择
+        roleSelectMask.style.display="flex";
+        return;
+    }
+    //自动填入房间
+    document.getElementById("roomIdInput").value=room;
+    if(mode==="master"){
+        setMasterMode();
+        initP2P();
+    }else if(mode==="watch"){
+        setWatchMode();
+        initP2P();
+    }
+}
+
+//全局挂载
+window.setMasterMode=setMasterMode;
+window.setWatchMode=setWatchMode;
+window.openEditModal=openEditModal;
+window.closeEditModal=closeEditModal;
+window.addNewProgram=addNewProgram;
+window.deleteProgramItem=deleteProgramItem;
+window.modifyProgramItem=modifyProgramItem;
+window.addChannel=addChannel;
+window.delChannel=delChannel;
+window.importCsvFile=importCsvFile;
+window.exportFlowCsv=exportFlowCsv;
+window.startTimer=startTimer;
+window.pauseTimer=pauseTimer;
+window.resetTimer=resetTimer;
+window.prevItem=prevItem;
+window.nextItem=nextItem;
+window.playRemindSound=playRemindSound;
+window.onCountdownModeChange=onCountdownModeChange;
+window.initP2P=initP2P;
+window.stopP2P=stopP2P;
+
+//页面加载完毕执行url自动逻辑
+window.addEventListener("load",parseUrlParamsAndAutoRun);
+</script>
+</body>
+</html>
